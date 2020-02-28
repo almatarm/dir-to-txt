@@ -1,0 +1,505 @@
+***$$$@@@ /mybatis-config.xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration
+  PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-config.dtd">
+
+<configuration>
+    <properties resource="sqlite.properties"/>
+    
+    <settings>
+        <setting name="lazyLoadingEnabled" value="true"/>
+    </settings>
+    <!--
+        A type alias is simply a shorter name for a Java type. It's only 
+        relevant to the XML configuration and simply exists to reduce redundant
+        typing of fully qualified classnames.
+    -->
+    <typeAliases>
+        
+        <typeAlias type="com.almatarm.money.domain.Account"         alias="Account" />
+        <typeAlias type="com.almatarm.money.domain.CreditAccount"   alias="CreditAccount" />
+        <typeAlias type="com.almatarm.money.domain.Loan"            alias="Loan" />
+        <typeAlias type="com.almatarm.money.domain.AccountType"     alias="AccountType" />
+        <typeAlias type="com.almatarm.money.domain.CurrencyUnitDO"  alias="CurrencyUnitDO" />
+        <typeAlias type="com.almatarm.money.domain.Payee"           alias="PAyee" />
+        <typeAlias type="com.almatarm.money.domain.Tag"             alias="Tag" />
+        <typeAlias type="com.almatarm.money.domain.TagGroup"        alias="TagGroup" />
+        <typeAlias type="com.almatarm.money.domain.Transaction"     alias="Transaction" />
+        
+       
+        
+        <!--<package name="com.almatarm.money.domain" />-->
+    </typeAliases>
+    
+    <typeHandlers>
+        <typeHandler handler="com.almatarm.money.mybatis.typehandler.AccountTypeTypeHandler" />
+        <!--<typeHandler handler="com.almatarm.money.mybatis.typehandler.CurrencyUnitDoTypeHandler" />--> 
+        <!--<package name="com.almatarm.money.mybatis.typehandler" />-->
+    </typeHandlers>
+
+    
+    <environments default="development">
+        <environment id="development">
+            <transactionManager type="JDBC"/>
+            <dataSource type="POOLED">    
+                <property name="driver" value="${driverClass}"/>
+                <property name="url"    value="${url}"/>
+<!--                                
+                <property name="username" value="${jdbc.username}"/>
+                <property name="password" value="${jdbc.password}"/>
+                -->
+            </dataSource>
+        </environment>
+    </environments>
+
+     <!-- Register all interfaces in a package as mappers -->
+    <mappers>
+        <mapper resource="com/almatarm/money/mybatis/mapper/AccountMapper.xml" />
+        <mapper resource="com/almatarm/money/mybatis/mapper/CurrencyUnitMapper.xml" />
+        <!--<package name="com/almatarm.money.mybatis.mapper" />-->
+    </mappers>
+ 
+</configuration>
+*** end *** end ***
+***$$$@@@ /sqlite.properties
+driverClass =org.sqlite.JDBC
+url = jdbc:sqlite:/Users/almatarm/Dropbox/projects/code/resources/databases/wimm.db
+*** end *** end ***
+***$$$@@@ /com/almatarm/money/mybatis/mapper/AccountMapper.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.almatarm.money.mybatis.mapper.AccountMapper">
+
+    <resultMap  id="accountResultMap"    type="Account">
+        <id     property="id"            column="ID" />
+        <result property="name"          column="Name" />
+        <result property="description"   column="Descr" />
+        <result property="notes"         column="Notes" />
+        <result property="type"          column="Type" />
+        <!--<result property="parentID"      column="Parent_ID" />-->
+        <result property="hidden"        column="Hidden" />
+        <result property="qualifiedName" column="QName" />
+        <association property="parent"      column="Parent_ID"   select="findAccountByID" fetchType="lazy"/>        
+        <association property="currency"     column="Currency_ID" javaType="CurrencyUnitDO">
+            <id     property="id"             column="CU_ID" />
+            <result property="code"           column="CU_Code" />
+            <result property="description"    column="CU_Descr" />
+            <result property="symbol"         column="CU_Symbol" />
+            <result property="provider"       column="CU_Provider" />
+            <result property="fractionDigits" column="CU_FractDigt" />
+        </association>
+        <discriminator column="Type" javaType="AccountType">
+            <case value="CREDIT" resultMap="creditResultMap" />
+            <case value="LOAN"   resultMap="loanResultMap" />            
+        </discriminator>
+        <!-- 
+            Table: Account
+            Mapper: AccountMapper
+            Unique: ID, QName
+            Find By: ID, QName, Name, Parent_ID
+            Searchable: Name, Descr, Notes, Type, QName
+            !Select Alone: 
+            !FK: currency, TagGroup_ID
+            Type: Long id, parentID; String name, qualifiedName, description, notes;
+            Type: String name, qualifiedName, description, notes;
+            Type: boolean hidden;
+        -->
+    </resultMap>
+
+    <resultMap  id="creditResultMap" type="CreditAccount" extends="accountResultMap">
+        <result property="limit"            column="CreditLimit" />
+        <result property="statementDay"     column="StatDay" />
+        <!-- 
+            Type: BigDecimal limit; int statementDay;
+            Class: com.almatarm.money.domain.CreditAccount
+        -->
+    </resultMap>
+    
+    <resultMap  id="loanResultMap" type="Loan" extends="accountResultMap">
+        <result property="presentValue"     column="PresentValue" />
+        <result property="interestRate"     column="InterestRate" />
+        <!-- 
+            Type: BigDecimal presentValue, interestRate;
+            Class: com.almatarm.money.domain.Loan
+        -->
+    </resultMap>
+    
+    <select id="getAccounts" resultMap="accountResultMap">
+        SELECT
+            Account.ID,
+            Account.Name,
+            Account.Descr,
+            Account.Notes,
+            Account.Type,
+            Account.Parent_ID,
+            Account.Hidden,
+            Account.QName,
+            Account.CreditLimit,
+            Account.StatDay,
+            Account.PresentValue,
+            Account.InterestRate,
+            Currency.ID                    AS CU_ID,
+            Currency.Code                  AS CU_Code,
+            Currency.Descr                 AS CU_Descr,
+            Currency.Symbol                AS CU_Symbol,
+            Currency.Provider              AS CU_Provider,
+            Currency.FractDigt             AS CU_FractDigt
+        FROM 
+            Account
+        LEFT OUTER JOIN Currency ON Account.Currency_ID = Currency.ID;
+    </select>
+
+    <select id="findAccounts" resultMap="accountResultMap">
+        SELECT
+            Account.ID,
+            Account.Name,
+            Account.Descr,
+            Account.Notes,
+            Account.Type,
+            Account.Parent_ID,
+            Account.Hidden,
+            Account.QName,
+            Account.CreditLimit,
+            Account.StatDay,
+            Account.PresentValue,
+            Account.InterestRate,
+            Currency.ID                    AS CU_ID,
+            Currency.Code                  AS CU_Code,
+            Currency.Descr                 AS CU_Descr,
+            Currency.Symbol                AS CU_Symbol,
+            Currency.Provider              AS CU_Provider,
+            Currency.FractDigt             AS CU_FractDigt
+        FROM
+            Account
+        LEFT OUTER JOIN Currency ON Account.Currency_ID = Currency.ID 
+        <where>
+            <if test="name != null">
+                Account.Name = #{name}
+            </if>
+            <if test="description != null">
+                Account.Descr = #{description}
+            </if>
+            <if test="notes != null">
+                Account.Notes = #{notes}
+            </if>
+            <if test="type != null">
+                Account.Type = #{type}
+            </if>
+            <if test="qualifiedName != null">
+                Account.QName = #{qualifiedName}
+            </if>
+        </where>
+    </select>
+
+    <select id="findAccountsLike" resultMap="accountResultMap">
+        SELECT
+            Account.ID,
+            Account.Name,
+            Account.Descr,
+            Account.Notes,
+            Account.Type,
+            Account.Parent_ID,
+            Account.Hidden,
+            Account.QName,
+            Account.CreditLimit,
+            Account.StatDay,
+            Account.PresentValue,
+            Account.InterestRate,
+            Currency.ID                    AS CU_ID,
+            Currency.Code                  AS CU_Code,
+            Currency.Descr                 AS CU_Descr,
+            Currency.Symbol                AS CU_Symbol,
+            Currency.Provider              AS CU_Provider,
+            Currency.FractDigt             AS CU_FractDigt
+        FROM
+            Account
+        LEFT OUTER JOIN Currency ON Account.Currency_ID = Currency.ID 
+        <where>
+            <if test="name != null">
+                Account.Name LIKE #{name}
+            </if>
+            <if test="description != null">
+                Account.Descr LIKE #{description}
+            </if>
+            <if test="notes != null">
+                Account.Notes LIKE #{notes}
+            </if>
+            <if test="type != null">
+                Account.Type LIKE #{type}
+            </if>
+            <if test="qualifiedName != null">
+                Account.QName LIKE #{qualifiedName}
+            </if>
+        </where>
+    </select>
+
+    <select id="findAccountByID" parameterType="Long" resultMap="accountResultMap">
+        SELECT
+            Account.ID,
+            Account.Name,
+            Account.Descr,
+            Account.Notes,
+            Account.Type,
+            Account.Parent_ID,
+            Account.Hidden,
+            Account.QName,
+            Account.CreditLimit,
+            Account.StatDay,
+            Account.PresentValue,
+            Account.InterestRate,
+            Currency.ID                    AS CU_ID,
+            Currency.Code                  AS CU_Code,
+            Currency.Descr                 AS CU_Descr,
+            Currency.Symbol                AS CU_Symbol,
+            Currency.Provider              AS CU_Provider,
+            Currency.FractDigt             AS CU_FractDigt
+        FROM
+            Account
+        LEFT OUTER JOIN Currency ON Account.Currency_ID = Currency.ID 
+        WHERE
+            Account.ID = #{id}
+    </select>
+
+    <select id="findAccountByQualifiedName" parameterType="String" resultMap="accountResultMap">
+        SELECT
+            Account.ID,
+            Account.Name,
+            Account.Descr,
+            Account.Notes,
+            Account.Type,
+            Account.Parent_ID,
+            Account.Hidden,
+            Account.QName,
+            Account.CreditLimit,
+            Account.StatDay,
+            Account.PresentValue,
+            Account.InterestRate,
+            Currency.ID                    AS CU_ID,
+            Currency.Code                  AS CU_Code,
+            Currency.Descr                 AS CU_Descr,
+            Currency.Symbol                AS CU_Symbol,
+            Currency.Provider              AS CU_Provider,
+            Currency.FractDigt             AS CU_FractDigt
+        FROM
+            Account
+        LEFT OUTER JOIN Currency ON Account.Currency_ID = Currency.ID 
+        WHERE
+            QName = #{qualifiedName}
+    </select>
+
+    <insert id="insertAccount" parameterType="Account" useGeneratedKeys="true" 
+            keyProperty="id">
+        INSERT INTO 
+            Account (Name, Descr, Notes, Type, Parent_ID, Hidden, QName, Currency_ID
+            <if test="_parameter instanceof com.almatarm.money.domain.CreditAccount">, CreditLimit, StatDay</if>
+            <if test="_parameter instanceof com.almatarm.money.domain.Loan">, PresentValue, InterestRate</if>) 
+        VALUES 
+            (#{name}, #{description}, #{notes}, #{type}, #{parentID}, #{hidden}, #{qualifiedName}, #{currency.id}
+            <if test="_parameter instanceof com.almatarm.money.domain.CreditAccount">, #{limit}, #{statementDay}</if>
+            <if test="_parameter instanceof com.almatarm.money.domain.Loan">, #{presentValue}, #{interestRate}</if>)    
+    </insert>
+
+    <update id="updateAccount" parameterType="Account">
+        UPDATE Account SET
+            Name           = #{name},
+            Descr          = #{description},
+            Notes          = #{notes},
+            Type           = #{type},
+            Parent_ID      = #{parentID},
+            Hidden         = #{hidden},
+            QName          = #{qualifiedName},
+            <if test="_parameter instanceof com.almatarm.money.domain.CreditAccount">
+            CreditLimit    = #{limit},
+            StatDay        = #{statementDay}
+            </if>
+            <if test="_parameter instanceof com.almatarm.money.domain.Loan">
+            PresentValue   = #{presentValue},
+            InterestRate   = #{interestRate}
+            </if>
+        WHERE 
+            ID = #{id}
+    </update> 
+
+    <delete id="deleteAccount" parameterType="long">
+        DELETE FROM Account WHERE ID = #{id}
+    </delete>
+       
+</mapper>
+
+*** end *** end ***
+***$$$@@@ /com/almatarm/money/mybatis/mapper/UserMapper.xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.almatarm.money.mappers.UserMapper">
+
+  <select id="getUserById" parameterType="int" resultType="com.almatarm.money.domain.User">
+     SELECT 
+      user_id as userId, 
+      email_id as emailId , 
+      password, 
+      first_name as firstName, 
+      last_name as lastName
+     FROM USER 
+     WHERE USER_ID = #{userId}
+  </select>
+  <!-- Instead of referencing Fully Qualified Class Names we can register Aliases in mybatis-config.xml and use Alias names. -->
+  <resultMap type="User" id="UserResult">
+      <id property="userId" column="user_id"/>
+      <result property="emailId" column="email_id"/>
+      <result property="password" column="password"/>
+      <result property="firstName" column="first_name"/>
+      <result property="lastName" column="last_name"/>   
+  </resultMap>
+
+  <select id="getAllUsers" resultMap="UserResult">
+   SELECT * FROM USER
+  </select>
+
+  <insert id="insertUser" parameterType="User" useGeneratedKeys="true" keyProperty="userId">
+   INSERT INTO USER(email_id, password, first_name, last_name)
+    VALUES(#{emailId}, #{password}, #{firstName}, #{lastName})
+  </insert>
+
+  <update id="updateUser" parameterType="User">
+    UPDATE USER 
+    SET
+     PASSWORD= #{password},
+     FIRST_NAME = #{firstName},
+     LAST_NAME = #{lastName}
+    WHERE USER_ID = #{userId}
+  </update>
+
+  <delete id="deleteUser" parameterType="int">
+    DELETE FROM USER WHERE USER_ID = #{userId}
+  </delete>
+
+</mapper>
+*** end *** end ***
+***$$$@@@ /com/almatarm/money/mybatis/mapper/CurrencyUnitMapper.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.almatarm.money.mybatis.mapper.CurrencyUnitMapper">
+
+    <resultMap  id="currencyUnitResultMap"   type="CurrencyUnitDO">
+        <id     property="id"             column="ID" />
+        <result property="code"           column="Code" />
+        <result property="description"    column="Descr" />
+        <result property="symbol"         column="Symbol" />
+        <result property="provider"       column="Provider" />
+        <result property="fractionDigits" column="FractDigt" />
+        <!-- 
+            Table: Currency
+            Mapper: currencyMapper
+            Unique: ID, Code
+            Find By: ID, Name, Descr, Symbol, Provider
+            Searchable: Code, Descr, Symbol, Provider
+            Select Alone: Code, Provider
+            Type: Long id; 
+        -->
+    </resultMap>
+   
+    <select id="getCurrencyUnits" resultMap="currencyUnitResultMap">
+        SELECT
+            ID, Code, Descr, Symbol, Provider, FractDigt
+        FROM
+            Currency
+    </select>
+
+    <select id="getCurrencyUnitCodesList"  resultType="String">
+        SELECT DISTINCT 
+            Code
+        FROM 
+            Currency    
+    </select>
+
+    <select id="getCurrencyUnitProvidersList"  resultType="String">
+        SELECT DISTINCT 
+            Provider
+        FROM 
+            Currency    
+    </select>
+
+    <select id="findCurrencyUnits" resultMap="currencyUnitResultMap">
+        SELECT
+            ID, Code, Descr, Symbol, Provider, FractDigt
+        FROM
+            Currency
+        <where>
+            <if test="code != null">
+                Currency.Code = #{code}
+            </if>
+            <if test="description != null">
+                Currency.Descr = #{description}
+            </if>
+            <if test="symbol != null">
+                Currency.Symbol = #{symbol}
+            </if>
+            <if test="provider != null">
+                Currency.Provider = #{provider}
+            </if>
+        </where>
+    </select>
+
+    <select id="findCurrencyUnitsLike" resultMap="currencyUnitResultMap">
+        SELECT
+            ID, Code, Descr, Symbol, Provider, FractDigt
+        FROM
+            Currency
+        <where>
+            <if test="code != null">
+                Currency.Code LIKE #{code}
+            </if>
+            <if test="description != null">
+                Currency.Descr LIKE #{description}
+            </if>
+            <if test="symbol != null">
+                Currency.Symbol LIKE #{symbol}
+            </if>
+            <if test="provider != null">
+                Currency.Provider LIKE #{provider}
+            </if>
+        </where>
+    </select>
+
+    <select id="findCurrencyUnitByID" parameterType="Long" resultMap="currencyUnitResultMap">
+        SELECT
+            ID, Code, Descr, Symbol, Provider, FractDigt
+        FROM
+            Currency
+        WHERE
+            ID = #{id}
+    </select>
+
+    <insert id="insertCurrencyUnit" parameterType="CurrencyUnitDO" useGeneratedKeys="true" 
+            keyProperty="id">
+        INSERT INTO 
+            Currency (Code, Descr, Symbol, Provider, FractDigt) 
+        VALUES 
+            (#{code}, #{description}, #{symbol}, #{provider}, #{fractionDigits})    
+    </insert>
+
+    <update id="updateCurrencyUnit" parameterType="CurrencyUnitDO">
+        UPDATE Currency SET
+            Code            = #{code},
+            Descr           = #{description},
+            Symbol          = #{symbol},
+            Provider        = #{provider},
+            FractDigt       = #{fractionDigits}
+        WHERE 
+            ID = #{id}
+    </update> 
+
+    <delete id="deleteCurrencyUnit" parameterType="long">
+        DELETE FROM Currency WHERE ID = #{id}
+    </delete>
+
+</mapper>
+
+*** end *** end ***

@@ -1,0 +1,1214 @@
+***$$$@@@ /org/jvnet/inflector/rule/AbstractRegexReplacementRule.java
+package org.jvnet.inflector.rule;
+
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.jvnet.inflector.Rule;
+
+/**
+ * <p>
+ * An abstract rule specified using a regular expression and replacement. Subclasses
+ * must implement {@link #replace} to perform the actual replacement.
+ * </p>
+ * @author Tom White
+ */
+public abstract class AbstractRegexReplacementRule implements Rule {
+
+	private final Pattern pattern;
+	
+	/**
+	 * <p>
+	 * Construct a rule using the given regular expression.
+	 * </p>
+	 * @param regex the regular expression used to match words. Match information 
+	 * is available to subclasses in the {@link #replace} method. 
+	 */
+	public AbstractRegexReplacementRule(String regex) {
+		this.pattern = Pattern.compile(regex);
+	}
+			
+	public boolean applies(String word) {
+		return pattern.matcher(word).matches();
+	}
+
+	public String apply(String word) {
+		Matcher matcher = pattern.matcher(word);
+		if (!matcher.matches()) {
+			throw new IllegalArgumentException("Word '" + word + "' does not match regex: " + pattern.pattern());
+		}
+		return replace(matcher);
+	}
+	
+	/**
+	 * <p>
+	 * Use the state in the given {@link Matcher} to perform a replacement.
+	 * </p>
+	 * @param matcher the matcher used to match the word
+	 * @return the transformed word
+	 */
+	public abstract String replace(Matcher matcher);
+
+	/**
+	 * <p>
+	 * Form the disjunction of the given regular expression patterns.
+	 * For example if patterns contains "a" and "b" then the disjunction is "(a|b)",
+	 * that is, "a or b". 
+	 * </p>
+	 * @param patterns an array of regular expression patterns
+	 * @return a pattern that matches if any of the input patterns match
+	 */
+	public static String disjunction(String[] patterns) {
+		String regex = "";
+		for (int i = 0; i < patterns.length; i++) {
+			regex += patterns[i];
+			if (i < patterns.length - 1) {
+				regex += "|";
+			}
+		}
+		return "(?:" + regex + ")";
+	}
+
+	/**
+	 * <p>
+	 * Form the disjunction of the given regular expression patterns.
+	 * For example if patterns contains "a" and "b" then the disjunction is "(a|b)",
+	 * that is, "a or b". 
+	 * </p>
+	 * @param patterns a set of regular expression patterns
+	 * @return a pattern that matches if any of the input patterns match
+	 */
+	public static String disjunction(Set<String> patterns) {
+		return disjunction(patterns.toArray(new String[0]));
+	}
+	
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/rule/SuffixInflectionRule.java
+package org.jvnet.inflector.rule;
+import org.jvnet.inflector.Rule;
+
+/**
+ * <p>
+ * A rule for specifying an inflection using suffixes. For example, the English nouns
+ * which have the suffix -y, generally change the suffix to -ies in the plural. Such a rule would
+ * be expressed as <code>new SuffixInflectionRule("-y", "-ies")</code>.
+ * </p>
+ * @author Tom White
+ */
+public class SuffixInflectionRule implements Rule {
+	
+	private final String regex;
+	private final String singularSuffix;
+	private final String pluralSuffix;
+	
+	/**
+	 * <p>
+	 * Construct a rule for words with suffix <code>singularSuffix</code> which
+	 * becomes <code>pluralSuffix</code> in the plural.
+	 * </p>
+	 * @param singularSuffix the singular suffix, starting with a "-" character
+	 * @param pluralSuffix the plural suffix, starting with a "-" character
+	 */
+	public SuffixInflectionRule(String singularSuffix, String pluralSuffix) {
+		this(singularSuffix, singularSuffix, pluralSuffix);
+	}
+	
+	/**
+	 * <p>
+	 * Construct a rule for words with suffix <code>suffix</code>, where 
+     * <code>singularSuffix</code>
+	 * becomes <code>pluralSuffix</code> in the plural.
+	 * @param suffix the suffix, starting with a "-" character,  which the end of the word must match.
+	 * Note that regular expression patterns may be used.
+	 * @param singularSuffix the singular suffix, starting with a "-" character.
+	 * Note that it must be true that <code>suffix</code> ends with <code>singularSuffix</code>.
+	 * @param pluralSuffix the plural suffix, starting with a "-" character
+	 * </p>
+	 */	
+	public SuffixInflectionRule(String suffix, String singularSuffix, String pluralSuffix) {
+		// TODO: check suffix ends with singularSuffix?
+		this.regex = "(?i).*" + suffix.substring(1) + "$";
+		this.singularSuffix = singularSuffix;
+		this.pluralSuffix = pluralSuffix;
+	}	
+
+	public boolean applies(String word) {
+		return word.matches(regex);
+	}
+	
+	public String apply(String word) {
+		int i = word.lastIndexOf(singularSuffix.substring(1));
+		//TODO: check i
+		// TODO: make case insensitive
+		return word.substring(0, i) + pluralSuffix.substring(1);
+	}
+
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/rule/IrregularMappingRule.java
+package org.jvnet.inflector.rule;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+
+/**
+ * <p>
+ * A rule for specifying an irregular inflection using a combination of a map of
+ * singular to plural forms and a regular expression replacement. Subclasses
+ * cn implement {@link #replace} to perform the actual replacement, which by default 
+ * uses the map to substitute a plural form for the corresponding singular form found in group 0
+ * of the regular expression match.
+ * </p>
+ * @author Tom White
+ */
+public class IrregularMappingRule extends AbstractRegexReplacementRule {
+
+	protected final Map<String, String> mappings;
+	
+	/**
+	 * <p>
+	 * Construct a rule using the given regular expression and irregular forms map.
+	 * </p>
+	 * @param wordMappings the map of singular to plural forms
+	 * @param regex the regular expression used to match words. Match information 
+	 * is available to subclasses in the {@link #replace} method. 
+	 */
+	public IrregularMappingRule(Map<String, String> wordMappings, String regex) {
+		super(regex);
+		this.mappings = wordMappings;
+	}
+	
+	@Override
+	public String replace(Matcher m) {
+		return mappings.get(m.group(0).toLowerCase());
+	}	
+	
+	/**
+	 * <p>
+	 * Turn the array of String array mapping pairs into a map.
+	 * </p>
+	 * @param wordMappings
+	 * @return a map of singular to plural forms
+	 */
+	public static Map<String, String> toMap(String[][] wordMappings) {
+		Map<String, String> mappings = new HashMap<String, String>();
+		for (int i = 0; i < wordMappings.length; i++) {
+			String singular = wordMappings[i][0];
+			String plural = wordMappings[i][1];
+			mappings.put(singular, plural);
+		}
+		return mappings;
+	}
+	
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/rule/RegexReplacementRule.java
+package org.jvnet.inflector.rule;
+import java.util.regex.Matcher;
+
+/**
+ * <p>
+ * A rule specified using a regular expression and a replacement string.
+ * </p>
+ * @author Tom White
+ */
+public class RegexReplacementRule extends AbstractRegexReplacementRule {
+	
+	private final String replacement;
+	
+	/**
+	 * Construct a rule using the given regular expression and replacement string.
+	 * @param regex the regular expression used to match words
+	 * @param replacement the string to use during replacement.
+	 * The replacement string may contain references to subsequences captured matching.
+	 * See {@link Matcher#appendReplacement}.
+	 */
+	public RegexReplacementRule(String regex, String replacement) {
+		super(regex);
+		this.replacement = replacement;
+	}
+
+	@Override
+	public String replace(Matcher matcher) {
+		return matcher.replaceFirst(replacement);
+	}
+	
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/rule/CategoryInflectionRule.java
+package org.jvnet.inflector.rule;
+
+/**
+ * <p>
+ * A rule for specifying an inflection using suffixes that only applies to a 
+ * subset of words with those suffixes (a category).
+ * </p>
+ * @author Tom White
+ */
+public class CategoryInflectionRule extends SuffixInflectionRule {
+	
+	private final String regex;
+	
+	/**
+	 * <p>
+	 * Construct a rule for <code>words</code> with suffix <code>singularSuffix</code> which
+	 * becomes <code>pluralSuffix</code> in the plural.
+	 * </p>
+	 * @param words the set of words that define this category
+	 * @param singularSuffix the singular suffix, starting with a "-" character
+	 * @param pluralSuffix the plural suffix, starting with a "-" character
+	 */
+	public CategoryInflectionRule(String[] words, String singularSuffix, String pluralSuffix) {
+		super(singularSuffix, pluralSuffix);
+		this.regex = "(?i)" + AbstractRegexReplacementRule.disjunction(words);
+	}
+
+	@Override
+	public boolean applies(String word) {
+		return word.matches(regex);
+	}
+	
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/lang/it/NounPluralizer.java
+package org.jvnet.inflector.lang.it;
+
+import static org.jvnet.inflector.rule.AbstractRegexReplacementRule.disjunction;
+import static org.jvnet.inflector.rule.IrregularMappingRule.toMap;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+import org.jvnet.inflector.Pluralizer;
+import org.jvnet.inflector.Rule;
+import org.jvnet.inflector.RuleBasedPluralizer;
+import org.jvnet.inflector.rule.CategoryInflectionRule;
+import org.jvnet.inflector.rule.IrregularMappingRule;
+import org.jvnet.inflector.rule.RegexReplacementRule;
+import org.jvnet.inflector.rule.SuffixInflectionRule;
+
+/**
+ * <p>
+ * A {@link Pluralizer} for Italian nouns.
+ * </p>
+ * <p>
+ * Instances of this class are safe for multiple concurrent threads.
+ * </p>
+ * <p>
+ * This code is based on the rules for plurals described in 
+ * <a href="http://www.amazon.co.uk/gp/product/0563399430/202-0809787-0273425?v=glance&n=266239">BBC Italian Grammar</a>,
+ * by Alwena Lamping.
+ * </p>
+ * <p>
+ * This is not a full implementation since most exceptional categories (e.g. irregular nouns,
+ * words ending -co which change to -ci, etc.) are very incomplete.
+ * Also, pronouns are not supported.
+ * </p>
+ * @author Tom White
+ */
+public class NounPluralizer extends RuleBasedPluralizer {
+	
+	private static final Map<String, String> IRREGULAR_NOUNS = toMap(new String[][]{
+			{ "moglie", "mogli" },
+			{ "uovo", "uova" },
+			{ "lenzuolo", "lenzuola" },
+			{ "paio", "paia" },
+			{ "braccio", "braccia" },
+			{ "dito", "dita" },
+			{ "centinaio", "centinaia" },
+			{ "uomo", "uomini" },
+			{ "dio", "dei" },
+			{ "collega", "colleghi" }, // assume male form 
+			{ "atleta", "atleti" }, // assume male form
+	});
+	
+	private static final String[] CATEGORY_UNINFLECTED_NOUNS = {
+		"radio", "foto", "moto", // feminine word ending in -o
+		"computer", "chef", "hostess", // loan words
+	};
+	
+	private static final String[] CATEGORY_MA_MA_RULE = {
+		// words ending -ma which are uninflected
+		"cinema", "clima"
+	};	
+
+	private static final String[] CATEGORY_MA_ME_RULE = {
+		// words ending -ma which change to -me (not sure this is a category)
+		"vittima"
+	};	
+
+	private static final String[] CATEGORY_IO_II_RULE = {
+		// words ending -io where the i is stressed
+		"zio",
+	};	
+
+	private static final String[] CATEGORY_CO_CI_RULE = {
+		// words ending -co preceded by a vowel
+		"amico",
+	};	
+	
+	private static final String[] CATEGORY_GO_GI_RULE = {
+		// words ending -go preceded by a vowel
+		"asparago",
+	};	
+	
+	private static final String[] CATEGORY_CIA_CIE_RULE = {
+		// words ending -cia preceded by a vowel or where the i is stressed
+		"farmacia",
+	};	
+	
+	private static final String[] CATEGORY_GIA_GIE_RULE = {
+		// words ending -gia preceded by a vowel or where the i is stressed
+		"valigia",
+	};	
+	
+	private final List<Rule> rules = Arrays.asList(new Rule[] {
+			
+		// Blank word
+		new RegexReplacementRule("^(\\s)$", "$1"),
+		
+		// Irregular nouns
+		new IrregularMappingRule(IRREGULAR_NOUNS, "(?i)" + disjunction(IRREGULAR_NOUNS.keySet()) + "$"),
+		
+		// Nouns ending in -ista (referring to people)
+		new SuffixInflectionRule("-ista", "-isti"), // assume male form
+		
+		// Irregular nouns that do not inflect in the plural
+		new CategoryInflectionRule(CATEGORY_UNINFLECTED_NOUNS, "-", "-"),
+		new SuffixInflectionRule("-[\u00e0|\u00e8|\u00ec|\u00f9]", "-", "-"),
+		new SuffixInflectionRule("-ie?", "-", "-"),
+		
+		// Irregular masculine nouns ending in -ma
+		new CategoryInflectionRule(CATEGORY_MA_MA_RULE, "-ma", "-ma"),		
+		new CategoryInflectionRule(CATEGORY_MA_ME_RULE, "-ma", "-me"),		
+		new SuffixInflectionRule("-ma", "-mi"),
+					
+		// Regular nouns ending in -o
+		
+		new CategoryInflectionRule(CATEGORY_IO_II_RULE, "-io", "-ii"),		
+		new SuffixInflectionRule("-io", "-o", "-"),
+		
+		new CategoryInflectionRule(CATEGORY_CO_CI_RULE, "-co", "-ci"),		
+		new SuffixInflectionRule("-co", "-chi"),
+		
+		new CategoryInflectionRule(CATEGORY_GO_GI_RULE, "-go", "-gi"),		
+		new SuffixInflectionRule("-go", "-ghi"),
+		
+		new SuffixInflectionRule("-o", "-i"),
+		
+		// Regular nouns ending in -a
+		
+		new SuffixInflectionRule("-ca", "-che"),
+
+		new SuffixInflectionRule("-ga", "-ghe"),
+
+		new CategoryInflectionRule(CATEGORY_CIA_CIE_RULE, "-cia", "-cie"),		
+		new SuffixInflectionRule("-cia", "-ce"),
+
+		new CategoryInflectionRule(CATEGORY_GIA_GIE_RULE, "-gia", "-gie"),		
+		new SuffixInflectionRule("-gia", "-ge"),
+
+		new SuffixInflectionRule("-a", "-e"),
+		
+		// Regular nouns ending in -e
+
+		new SuffixInflectionRule("-e", "-i"),
+	
+		// Don't inflect by default
+		new SuffixInflectionRule("-", "-"),
+	});
+
+	/**
+	 * Default constructor.
+	 */
+	public NounPluralizer() {
+		setRules(rules);
+		setLocale(Locale.ITALIAN);
+	}
+
+	
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/lang/en/NounPluralizer.java
+package org.jvnet.inflector.lang.en;
+
+import static org.jvnet.inflector.rule.AbstractRegexReplacementRule.disjunction;
+import static org.jvnet.inflector.rule.IrregularMappingRule.toMap;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Matcher;
+
+import org.jvnet.inflector.Pluralizer;
+import org.jvnet.inflector.Rule;
+import org.jvnet.inflector.RuleBasedPluralizer;
+import org.jvnet.inflector.rule.AbstractRegexReplacementRule;
+import org.jvnet.inflector.rule.CategoryInflectionRule;
+import org.jvnet.inflector.rule.IrregularMappingRule;
+import org.jvnet.inflector.rule.RegexReplacementRule;
+import org.jvnet.inflector.rule.SuffixInflectionRule;
+
+/**
+ * <p>
+ * A {@link Pluralizer} for English nouns.
+ * </p>
+ * <p>
+ * Instances of this class are safe for multiple concurrent threads.
+ * </p>
+ * <p>
+ * This code is based on <a href="http://search.cpan.org/dist/Lingua-EN-Inflect/lib/Lingua/EN/Inflect.pm">Lingua::EN::Inflect</a>,
+ * which is Copyright (c) 1997-2000, Damian Conway.
+ * </p>
+ * @author Tom White
+ */
+public class NounPluralizer extends RuleBasedPluralizer {
+	
+	// TODO understand this regex better and compare to Perl!
+	private static final String POSTFIX_ADJECTIVE_REGEX = 
+		"(" +
+		"(?!major|lieutenant|brigadier|adjutant)\\S+(?=(?:-|\\s+)general)|" +
+		"court(?=(?:-|\\s+)martial)" +
+		")(.*)";
+	
+	private static final String[] PREPOSITIONS = {
+		"about", "above", "across", "after", "among", "around", "at", "athwart", "before", "behind",
+		"below", "beneath", "beside", "besides", "between", "betwixt", "beyond", "but", "by",
+		"during", "except", "for", "from", "in", "into", "near", "of", "off", "on", "onto", "out", "over",
+		"since", "till", "to", "under", "until", "unto", "upon", "with",
+	};
+
+	private static final Map<String, String> NOMINATIVE_PRONOUNS = toMap(new String[][]{
+		// nominative			reflexive
+		{ "i", "we" },			{ "myself",		"ourselves" },
+		{ "you", "you" },		{ "yourself",	"yourselves" },
+		{ "she", "they" },		{ "herself",	"themselves" },
+		{ "he", "they" },		{ "himself",	"themselves" },
+		{ "it", "they" },		{ "itself", 	"themselves" },
+		{ "they", "they" },		{ "themself",	"themselves" },		
+		
+		// possessive
+
+		{ "mine", "ours" },
+		{ "yours", "yours" },
+		{ "hers", "theirs" },
+		{ "his", "theirs" },
+		{ "its", "theirs" },
+		{ "theirs", "theirs" },		
+	});
+	
+	private static final Map<String, String> ACCUSATIVE_PRONOUNS = toMap(new String[][]{
+		// accusative			reflexive
+		{ "me",		"us" }, 	{ "myself",		"ourselves" },
+		{ "you",	"you" },	{ "yourself",	"yourselves" },
+		{ "her",	"them" },	{ "herself",	"themselves" },
+		{ "him", 	"them" },	{ "himself",	"themselves" },
+		{ "it",		"them" },	{ "itself",		"themselves" },
+		{ "them",	"them" },	{ "themself",	"themselves" },
+	});
+	
+	private static final Map<String, String> IRREGULAR_NOUNS = toMap(new String[][]{
+		{ "child", "children" },
+		{ "brother", "brothers" }, // irregular classical form
+		{ "loaf", "loaves" },
+		{ "hoof", "hoofs" }, // irregular classical form
+		{ "beef", "beefs" }, // irregular classical form
+		{ "money", "monies" },
+		{ "mongoose", "mongooses" },
+		{ "ox", "oxen" },
+		{ "cow", "cows" }, // irregular classical form
+		{ "soliloquy", "soliloquies" },
+		{ "graffito", "graffiti" },
+		{ "prima donna", "prima donnas" }, // irregular classical form
+		{ "octopus", "octopuses" }, // irregular classical form
+		{ "genie", "genies" }, // irregular classical form
+		{ "ganglion", "ganglions" }, // irregular classical form
+		{ "trilby", "trilbys" },
+		{ "turf", "turfs" }, // irregular classical form
+		{ "numen", "numina" },
+		{ "atman", "atmas" },
+		{ "occiput", "occiputs" }, // irregular classical form		
+		
+		// Words ending in -s
+		{ "corpus", "corpuses" }, // irregular classical form
+		{ "opus", "opuses" }, // irregular classical form
+		{ "genus", "genera" },
+		{ "mythos", "mythoi" },
+		{ "penis", "penises" }, // irregular classical form
+		{ "testis", "testes" },
+		{ "atlas", "atlases" }, // irregular classical form		
+	});
+	
+	private static final String[] CATEGORY_UNINFLECTED_NOUNS = {
+		// Fish and herd animals
+		".*fish", "tuna", "salmon", "mackerel", "trout",
+		"bream", "sea[- ]bass", "carp", "cod", "flounder", "whiting", 
+
+		".*deer", ".*sheep", 
+
+		// Nationals ending in -ese
+        "Portuguese", "Amoyese", "Borghese", "Congoese", "Faroese",
+		"Foochowese", "Genevese", "Genoese", "Gilbertese", "Hottentotese",
+		"Kiplingese", "Kongoese", "Lucchese", "Maltese", "Nankingese",
+		"Niasese", "Pekingese", "Piedmontese", "Pistoiese", "Sarawakese",
+		"Shavese", "Vermontese", "Wenchowese", "Yengeese",
+		".*[nrlm]ese",
+
+		// Diseases
+		".*pox",
+
+		// Other oddities
+		"graffiti", "djinn",
+		
+		// Words ending in -s
+		
+		// Pairs or groups subsumed to a singular
+	    "breeches", "britches", "clippers", "gallows", "hijinks",
+		"headquarters", "pliers", "scissors", "testes", "herpes",
+		"pincers", "shears", "proceedings", "trousers",
+
+		// Unassimilated Latin 4th declension
+		"cantus", "coitus", "nexus",
+
+		// Recent imports
+		"contretemps", "corps", "debris",
+		".*ois", "siemens",
+		
+		// Diseases
+		".*measles", "mumps",
+
+		// Others
+		"diabetes", "jackanapes", "series", "species", "rabies",
+		"chassis", "innings", "news", "mews",		
+	};
+	
+	
+	private static final String[] CATEGORY_MAN_MANS_RULE = {
+		"human",
+		"Alabaman", "Bahaman", "Burman", "German",
+		"Hiroshiman", "Liman", "Nakayaman", "Oklahoman",
+		"Panaman", "Selman", "Sonaman", "Tacoman", "Yakiman",
+		"Yokohaman", "Yuman",	
+	};
+
+	private static final String[] CATEGORY_EX_ICES_RULE = {
+		"codex",	"murex",	"silex",
+	};
+
+	private static final String[] CATEGORY_IX_ICES_RULE = {
+		"radix",	"helix",
+	};
+
+	private static final String[] CATEGORY_UM_A_RULE = {
+		"bacterium",	"agendum",	"desideratum",	"erratum",
+		"stratum",	"datum",	"ovum",		"extremum",
+		"candelabrum",
+	};
+	
+	private static final String[] CATEGORY_US_I_RULE = {
+		"alumnus",	"alveolus",	"bacillus",	"bronchus",
+		"locus",	"nucleus",	"stimulus",	"meniscus",
+	};
+
+	private static final String[] CATEGORY_ON_A_RULE = {
+		"criterion",	"perihelion",	"aphelion",
+		"phenomenon",	"prolegomenon",	"noumenon",
+		"organon",	"asyndeton",	"hyperbaton",
+	};
+
+	private static final String[] CATEGORY_A_AE_RULE = {
+		"alumna", "alga", "vertebra", "persona"
+	};
+
+	private static final String[] CATEGORY_O_OS_RULE = {
+		"albino",	"archipelago",	"armadillo",
+		"commando",	"crescendo",	"fiasco",
+		"ditto",	"dynamo",	"embryo",
+		"ghetto",	"guano",	"inferno",
+		"jumbo",	"lumbago",	"magneto",
+		"manifesto",	"medico",	"octavo",
+		"photo",	"pro",		"quarto",	
+		"canto",	"lingo",	"generalissimo",
+		"stylo",	"rhino",	"casino",
+		"auto",     "macro",    "zero",
+		
+		"solo",		"soprano",	"basso",	"alto",
+		"contralto",	"tempo",	"piano",	"virtuoso",
+		
+	};
+
+	private static final String[] CATEGORY_SINGULAR_S_RULE = {
+		".*ss",
+        "acropolis", "aegis", "alias", "asbestos", "bathos", "bias",
+        "bronchitis", "bursitis", "caddis", "cannabis",
+        "canvas", "chaos", "cosmos", "dais", "digitalis",
+        "epidermis", "ethos", "eyas", "gas", "glottis", 
+        "hubris", "ibis", "lens", "mantis", "marquis", "metropolis",
+        "pathos", "pelvis", "polis", "rhinoceros",
+        "sassafras", "trellis", ".*us", "[A-Z].*es",
+        
+    	"ephemeris", "iris", "clitoris",
+    	"chrysalis", "epididymis",
+
+    	// Inflamations
+    	".*itis", 
+	};
+	
+	// References to Steps are to those in Conway's paper
+
+	private final List<Rule> rules = Arrays.asList(new Rule[] {
+			
+		// Blank word
+		new RegexReplacementRule("^(\\s)$", "$1"),
+			
+		// Nouns that do not inflect in the plural (such as "fish") [Step 2]
+		new CategoryInflectionRule(CATEGORY_UNINFLECTED_NOUNS, "-", "-"),
+		
+		// Compounds [Step 12]
+		new AbstractRegexReplacementRule("(?i)^(?:" + POSTFIX_ADJECTIVE_REGEX + ")$") {
+			@Override public String replace(Matcher m) {
+				return NounPluralizer.this.pluralize(m.group(1)) + m.group(2);
+			}
+		},
+		
+		new AbstractRegexReplacementRule(
+			"(?i)(.*?)((?:-|\\s+)(?:" + disjunction(PREPOSITIONS) + "|d[eu])(?:-|\\s+))a(?:-|\\s+)(.*)") {
+
+			@Override public String replace(Matcher m) {
+				return NounPluralizer.this.pluralize(m.group(1)) +
+					m.group(2) +
+					NounPluralizer.this.pluralize(m.group(3));
+			}
+		},
+		
+		new AbstractRegexReplacementRule(
+			"(?i)(.*?)((-|\\s+)(" + disjunction(PREPOSITIONS) + "|d[eu])((-|\\s+)(.*))?)") {
+
+			@Override public String replace(Matcher m) {
+				return NounPluralizer.this.pluralize(m.group(1)) + m.group(2);
+			}
+		},
+		
+		// Pronouns [Step 3]
+		new IrregularMappingRule(NOMINATIVE_PRONOUNS, "(?i)" + disjunction(NOMINATIVE_PRONOUNS.keySet())),
+		new IrregularMappingRule(ACCUSATIVE_PRONOUNS, "(?i)" + disjunction(ACCUSATIVE_PRONOUNS.keySet())),
+		new IrregularMappingRule(ACCUSATIVE_PRONOUNS, 
+				"(?i)(" + disjunction(PREPOSITIONS) + "\\s)" +
+				"(" + disjunction(ACCUSATIVE_PRONOUNS.keySet()) + ")") {
+			@Override public String replace(Matcher m) {
+				return m.group(1) + mappings.get(m.group(2).toLowerCase());
+			}					
+		},
+		
+		// Standard irregular plurals (such as "children") [Step 4]
+		new IrregularMappingRule(IRREGULAR_NOUNS, "(?i)(.*)\\b" + disjunction(IRREGULAR_NOUNS.keySet()) + "$"),
+		new CategoryInflectionRule(CATEGORY_MAN_MANS_RULE, "-man", "-mans"),
+		new RegexReplacementRule("(?i)(\\S*)(person)$", "$1people"),
+		
+		// Families of irregular plurals for common suffixes (such as "-men") [Step 5]
+		new SuffixInflectionRule("-man", "-man", "-men"),
+		new SuffixInflectionRule("-[lm]ouse", "-ouse", "-ice"),
+		new SuffixInflectionRule("-tooth", "-tooth", "-teeth"),
+		new SuffixInflectionRule("-goose", "-goose", "-geese"),
+		new SuffixInflectionRule("-foot", "-foot", "-feet"),
+		
+		// Assimilated irregular plurals [Step 6]
+		new SuffixInflectionRule("-ceps", "-", "-"),
+		new SuffixInflectionRule("-zoon", "-zoon", "-zoa"),
+		new SuffixInflectionRule("-[csx]is", "-is", "-es"),
+		new CategoryInflectionRule(CATEGORY_EX_ICES_RULE, "-ex", "-ices"),
+		new CategoryInflectionRule(CATEGORY_IX_ICES_RULE, "-ix", "-ices"),
+		new CategoryInflectionRule(CATEGORY_UM_A_RULE, "-um", "-a"),
+		new CategoryInflectionRule(CATEGORY_US_I_RULE, "-us", "-i"),
+		new CategoryInflectionRule(CATEGORY_ON_A_RULE, "-on", "-a"),
+		new CategoryInflectionRule(CATEGORY_A_AE_RULE, "-a", "-ae"),
+		
+		// Classical irregular plurals [Step 7]
+		// Classical plurals have not been implemented
+		
+		// Nouns ending in sibilants (such as "churches") [Step 8]
+		new CategoryInflectionRule(CATEGORY_SINGULAR_S_RULE, "-s", "-ses"),
+		new RegexReplacementRule("^([A-Z].*s)$", "$1es"),
+		new SuffixInflectionRule("-[cs]h", "-h", "-hes"),
+		new SuffixInflectionRule("-x", "-x", "-xes"),
+		new SuffixInflectionRule("-z", "-z", "-zes"),
+		
+		// Nouns ending with "-f" or "-fe" take "-ves" in the plural (such as "halves") [Step 9]
+		new SuffixInflectionRule("-[aeo]lf", "-f", "-ves"),
+		new SuffixInflectionRule("-[^d]eaf", "-f", "-ves"),
+		new SuffixInflectionRule("-arf", "-f", "-ves"),
+		new SuffixInflectionRule("-[nlw]ife", "-fe", "-ves"),
+
+		// Nouns ending with "-y" [Step 10]
+		new SuffixInflectionRule("-[aeiou]y", "-y", "-ys"),
+		new RegexReplacementRule("^([A-Z].*y)$", "$1s"),
+		new SuffixInflectionRule("-y", "-y", "-ies"),
+		
+		// Nouns ending with "-o" [Step 11]
+		new CategoryInflectionRule(CATEGORY_O_OS_RULE, "-o", "-os"),
+		new SuffixInflectionRule("-[aeiou]o", "-o", "-os"),
+		new SuffixInflectionRule("-o", "-o", "-oes"),
+		
+		// Default rule: add "s" [Step 13]
+		new SuffixInflectionRule("-", "-s"),
+	
+	});
+
+	/**
+	 * Default constructor.
+	 */
+	public NounPluralizer() {
+		setRules(rules);
+		setLocale(Locale.ENGLISH);
+	}
+
+	@Override
+	protected String postProcess(String trimmedWord, String pluralizedWord) {
+		if (trimmedWord.matches("^I$")) {
+			return pluralizedWord;
+		} 
+		return super.postProcess(trimmedWord, pluralizedWord);
+	}
+
+	
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/Pluralizer.java
+package org.jvnet.inflector;
+
+/**
+ * <p>
+ * <code>Pluralizer</code> converts singular word forms to their plural forms.
+ * Methods that are passed <code>null</code> must throw
+ * a {@link java.lang.NullPointerException}.
+ * </p>
+ * <p>
+ * Implementations of this interface must be safe for use by multiple concurrent threads.
+ * </p>
+ * @author Tom White
+ */
+public interface Pluralizer {
+
+	/**
+	 * <p>
+	 * Converts a word to its plural form.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @return the plural form
+	 */
+	public String pluralize(String word);
+	
+	/**
+	 * <p>
+	 * Converts a word to its plural form for the given number of instances.
+	 * Some languages (such as <a href="http://en.wikipedia.org/wiki/Dual_grammatical_number">Polish</a>)
+	 * have different plural forms depending on the number
+	 * of things being referred to.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @param number the number of objects being referred to in the plural
+	 * @return the plural form
+	 */	
+	public String pluralize(String word, int number);
+	
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/RuleBasedPluralizer.java
+package org.jvnet.inflector;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * <p>
+ * An implementation of {@link Pluralizer} that is implemented using an ordered list of {@link Rule}s.
+ * It is possible to specify a fallback {@link Pluralizer} that is invoked if none of the rules match.
+ * This makes it easy to override some rules of another {@link Pluralizer}.
+ * </p>
+ * <p>
+ * This class also preserves leading and trailing whitespace, so individual rules don't need to
+ * explicitly handle it.
+ * Case is also preserved; that is, the output of all uppercase input is automatically uppercased, and
+ * the output of titlecase input is automatically titlecased.
+ * This means rules can act in a case-insensitive manner.
+ * </p>
+ * <p>
+ * Instances of this class are safe for multiple concurrent threads.
+ * </p>
+ * @author Tom White
+ */
+public class RuleBasedPluralizer implements Pluralizer {
+	
+	static class IdentityPluralizer implements Pluralizer {
+		public String pluralize(String word) {
+			return word;
+		}
+		public String pluralize(String word, int number) {
+			return word;
+		}
+	}
+
+	private static final Pluralizer IDENTITY_PLURALIZER = new IdentityPluralizer();
+	
+	private List<Rule> rules;
+	private Locale locale;
+	private Pluralizer fallbackPluralizer;
+	
+	/**
+	 * <p>
+	 * Constructs a pluralizer with an empty list of rules.
+	 * Use the setters to configure.
+	 * </p>
+	 */
+	@SuppressWarnings("unchecked")
+	public RuleBasedPluralizer() {
+		this(Collections.EMPTY_LIST, Locale.getDefault());
+	}
+	
+	/**
+	 * <p>
+	 * Constructs a pluralizer that uses a list of rules then an identity {@link Pluralizer}
+	 * if none of the rules match.
+	 * This is useful to build your own {@link Pluralizer} from scratch.
+	 * </p>
+	 * @param rules the rules to apply in order
+	 * @param locale the locale specifying the language of the pluralizer
+	 */
+	public RuleBasedPluralizer(List<Rule> rules, Locale locale) {
+		this(rules, locale, IDENTITY_PLURALIZER);
+	}
+	
+	/**
+	 * <p>
+	 * Constructs a pluralizer that uses first a list of rules then a fallback {@link Pluralizer}.
+	 * This is useful to override the behaviour of an existing {@link Pluralizer}.
+	 * </p>
+	 * @param rules the rules to apply in order
+	 * @param locale the locale specifying the language of the pluralizer
+	 * @param fallbackPluralizer the pluralizer to use if no rules match
+	 */
+	public RuleBasedPluralizer(List<Rule> rules, Locale locale, Pluralizer fallbackPluralizer) {
+		this.rules = rules;
+		this.locale = locale;
+		this.fallbackPluralizer = fallbackPluralizer;
+	}	
+	
+	public Pluralizer getFallbackPluralizer() {
+		return fallbackPluralizer;
+	}
+
+	public void setFallbackPluralizer(Pluralizer fallbackPluralizer) {
+		this.fallbackPluralizer = fallbackPluralizer;
+	}
+
+	public Locale getLocale() {
+		return locale;
+	}
+
+	public void setLocale(Locale locale) {
+		this.locale = locale;
+	}
+
+	public List<Rule> getRules() {
+		return rules;
+	}
+
+	public void setRules(List<Rule> rules) {
+		this.rules = rules;
+	}
+
+	/**
+	 * <p>
+	 * Converts a noun or pronoun to its plural form.
+	 * </p>
+	 * <p>
+	 * This method is equivalent to calling <code>pluralize(word, 2)</code>.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular noun
+	 * @return the plural form of the noun
+	 */	
+	public String pluralize(String word) {
+		return pluralize(word, 2);
+	}
+
+	/**
+	 * <p>
+	 * Converts a noun or pronoun to its plural form for the given number of instances.
+	 * If <code>number</code> is 1, <code>word</code> is returned unchanged.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular noun
+	 * @param number the number of objects being referred to in the plural
+	 * @return the plural form of the noun
+	 */	
+	public String pluralize(String word, int number) {
+		if (number == 1) {
+			return word;
+		}
+		
+		Pattern pattern = Pattern.compile("\\A(\\s*)(.+?)(\\s*)\\Z");
+		Matcher matcher = pattern.matcher(word);
+		if (matcher.matches()) {
+			String pre = matcher.group(1);
+			String trimmedWord = matcher.group(2);
+			String post = matcher.group(3);
+			String plural = pluralizeInternal(trimmedWord);
+			if (plural == null) {
+				return fallbackPluralizer.pluralize(word, number);
+			}
+			return pre + postProcess(trimmedWord, plural) + post;
+		}
+		return word;		
+
+	}
+	
+	/**
+	 * <p>
+	 * Goes through the rules in turn until a match is found at which point the rule is applied
+	 * and the result returned.
+	 * If no rule matches, returns <code>null</code>.
+	 * </p>
+	 * @param word a singular noun
+	 * @return the plural form of the noun, or <code>null</code> if no rule matches
+	 */
+	protected String pluralizeInternal(String word) {
+		for (Rule rule : rules) {
+			if (rule.applies(word)) {
+				return rule.apply(word);
+			}
+		}
+		return null;
+	}	
+	
+	/**
+	 * <p>
+	 * Apply processing to <code>pluralizedWord</code>. This implementation ensures
+	 * the case of the plural is consistent with the case of the input word.
+	 * </p>
+	 * <p>
+	 * If <code>trimmedWord</code> is all uppercase, then <code>pluralizedWord</code>
+	 * is uppercased.
+	 * If <code>trimmedWord</code> is titlecase, then <code>pluralizedWord</code>
+	 * is titlecased.
+	 * </p>
+	 * @param trimmedWord the input word, with leading and trailing whitespace removed
+	 * @param pluralizedWord the pluralized word
+	 * @return the <code>pluralizedWord</code> after processing
+	 */
+	protected String postProcess(String trimmedWord, String pluralizedWord) {
+		if (trimmedWord.matches("^\\p{Lu}+$")) {
+			return pluralizedWord.toUpperCase(locale);
+		} else if (trimmedWord.matches("^\\p{Lu}.*")) {
+			return pluralizedWord.substring(0, 1).toUpperCase(locale) + pluralizedWord.substring(1);
+		}
+		return pluralizedWord;
+	}
+
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/Noun.java
+package org.jvnet.inflector;
+import java.util.Locale;
+
+/**
+ * <p>
+ * A <code>Noun</code> represents the grammatical part of speech that refers to
+ * a person, place, thing, event, substance, quality or idea.
+ * </p>
+ * <p>
+ * This class contains a number of static convenience methods ({@link #pluralOf(String)} for forming plurals.
+ * </p>
+ * @author Tom White
+ */
+public class Noun {
+	
+	/**
+	 * <p>
+	 * Creates a new {@link Pluralizer} instance for the default locale.
+	 * </p>
+	 * @return a pluralizer instance for the default locale
+	 */
+	public static Pluralizer pluralizer() {
+		return pluralizer(Locale.getDefault());
+	}
+	
+	/**
+	 * <p>
+	 * Creates a new {@link Pluralizer} instance for the specified locale.
+	 * </p>
+	 * @param locale the locale specifying the language of the pluralizer
+	 * @return a pluralizer instance for the specified locale, or <code>null</code> if there is none for this locale
+	 */
+	public static Pluralizer pluralizer(Locale locale) {
+		String className = "org.jvnet.inflector.lang." + locale.getLanguage() + ".NounPluralizer";
+		try {
+			Class<?> c = Class.forName(className);
+			return (Pluralizer) c.newInstance();
+		} catch (ClassNotFoundException e) {
+			return null;
+		} catch (InstantiationException e) {
+			throw new RuntimeException("Problem instantiating " + className, e);
+		} catch (IllegalAccessException e) {
+			throw new RuntimeException("Problem instantiating " + className, e);
+		}
+	}
+
+	/**
+	 * <p>
+	 * Converts a noun to its plural form using the {@link Pluralizer} for the default locale.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @return the plural form
+	 */	
+	public static String pluralOf(String word) {
+		return pluralOf(word, pluralizer());
+	}
+	
+	/**
+	 * <p>
+	 * Converts a noun to its plural form for the given number of instances
+	 * using the {@link Pluralizer} for the default locale.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @param number the number of objects being referred to in the plural
+	 * @return the plural form
+	 */	
+	public static String pluralOf(String word, int number) {
+		return pluralOf(word, number, pluralizer());
+	}
+	
+	/**
+	 * <p>
+	 * Converts a noun to its plural form using the {@link Pluralizer} for the given locale.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @param locale the locale specifying the language of the pluralizer
+	 * @return the plural form
+	 */		
+	public static String pluralOf(String word, Locale locale) {
+		return pluralOf(word, pluralizer(locale));
+	}
+	
+	/**
+	 * <p>
+	 * Converts a noun to its plural form for the given number of instances
+	 * using the {@link Pluralizer} for the given locale.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @param number the number of objects being referred to in the plural
+	 * @param locale the locale specifying the language of the pluralizer
+	 * @return the plural form
+	 */		
+	public static String pluralOf(String word, int number, Locale locale) {
+		return pluralOf(word, number, pluralizer(locale));
+	}
+	
+	/**
+	 * <p>
+	 * Converts a noun to its plural form using the given {@link Pluralizer}.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @param pluralizer a noun pluralizer
+	 * @return the plural form
+	 */		
+	public static String pluralOf(String word, Pluralizer pluralizer) {
+		return pluralizer == null ? null : pluralizer.pluralize(word);
+	}	
+
+	/**
+	 * <p>
+	 * Converts a noun to its plural form for the given number of instances
+	 * using the given {@link Pluralizer}.
+	 * </p>
+	 * <p>
+	 * The return value is not defined if this method is passed a plural form.
+	 * </p>
+	 * @param word a singular form
+	 * @param number the number of objects being referred to in the plural
+	 * @param pluralizer a noun pluralizer
+	 * @return the plural form
+	 */		
+	public static String pluralOf(String word, int number, Pluralizer pluralizer) {
+		return pluralizer == null ? null : pluralizer.pluralize(word, number);
+	}
+
+}
+
+*** end *** end ***
+***$$$@@@ /org/jvnet/inflector/Rule.java
+package org.jvnet.inflector;
+
+/**
+ * <p>
+ * A <code>Rule</code> represents how a word changes from one form to another. 
+ * </p>
+ * <p>
+ * Implementations of this interface must be safe for use by multiple concurrent threads in order to
+ * satisfy the contract of {@link Pluralizer}.
+ * </p>
+ * @author Tom White
+ */
+public interface Rule {
+	/**
+	 * <p>
+	 * Tests to see if this rule applies for the given word.
+	 * </p>
+	 * @param word the word that is being tested
+	 * @return <code>true</code> if this rule should be applied, <code>false</code> otherwise
+	 */
+	public boolean applies(String word);
+	
+	/**
+	 * <p>
+	 * Applies this rule to the word, and transforming it into a new form.
+	 * </p>
+	 * @param word the word to apply this rule to
+	 * @return the transformed word
+	 */
+	public String apply(String word);
+}
+
+*** end *** end ***
